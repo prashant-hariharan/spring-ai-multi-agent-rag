@@ -217,7 +217,14 @@ Source: `flows/TOOLS_FLOW.md`
 
 ![Tools Flow](flows/tools_flow.png)
 
-### 5.4 Model Routing Modes
+### 5.4 Combined Route Flow
+Intent: Shows the end-to-end `COMBINED` route flow that merges deterministic order facts with intent-scoped policy context and synthesizes a final answer.
+Controller: `AgentController` (`POST /agent/query`) enters orchestration; `CombinedRouteHandler` executes order lookup + RAG context + synthesis.
+Source: `flows/COMBINED_ROUTE_FLOW.md`
+
+![Combined Route Flow](flows/combined_route_flow.png)
+
+### 5.5 Model Routing Modes
 Intent: Shows how model requests are routed in default mode vs `litellm` profile mode.
 
 #### Default mode (without LiteLLM)
