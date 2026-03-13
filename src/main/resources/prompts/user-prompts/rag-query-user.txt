@@ -1,0 +1,10 @@
+Question:
+%s
+
+Context:
+%s
+
+Instructions:
+- Keep the response concise and actionable.
+- no extra keys
+- no markdown

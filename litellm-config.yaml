@@ -1,0 +1,71 @@
+model_list:
+  - model_name: openai
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPEN_API_KEY
+
+  - model_name: openai-embedding
+    litellm_params:
+      model: openai/text-embedding-3-small
+      api_key: os.environ/OPEN_API_KEY
+
+  - model_name: gemini
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: groq
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: os.environ/GROQ_API_KEY
+
+  - model_name: ollama
+    litellm_params:
+      model: ollama/llama3.2:3b
+      api_base: os.environ/OLLAMA_BASE_URL
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+guardrails:
+  - guardrail_name: baseline-input-filter
+    litellm_params:
+      guardrail: litellm_content_filter
+      mode: pre_call
+      default_on: true
+      blocked_words:
+        - keyword: "ignore previous instructions"
+          action: BLOCK
+        - keyword: "disregard previous instructions"
+          action: BLOCK
+        - keyword: "reveal system prompt"
+          action: BLOCK
+        - keyword: "show system prompt"
+          action: BLOCK
+        - keyword: "developer message"
+          action: BLOCK
+        - keyword: "hidden instructions"
+          action: BLOCK
+        - keyword: "bypass safety"
+          action: BLOCK
+        - keyword: "override policy"
+          action: BLOCK
+        - keyword: "jailbreak"
+          action: BLOCK
+      patterns:
+        - pattern_type: prebuilt
+          pattern_name: email
+          action: MASK
+        - pattern_type: prebuilt
+          pattern_name: us_ssn
+          action: BLOCK
+
+  - guardrail_name: baseline-output-filter
+    litellm_params:
+      guardrail: litellm_content_filter
+      mode: post_call
+      default_on: true
+      patterns:
+        - pattern_type: prebuilt
+          pattern_name: aws_access_key
+          action: BLOCK

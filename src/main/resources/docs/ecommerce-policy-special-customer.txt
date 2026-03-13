@@ -1,0 +1,103 @@
+TechMart Electronics - Tenant 1
+Customer Support Policy & Guidelines
+Effective Date: January 2026 | Version 2.0-T1
+
+================================================================================
+ORDER TRACKING
+================================================================================
+
+How to Track Your Order
+-----------------------
+Every order receives a Tracking ID (format: TM-T1-2026-XXXXX).
+
+METHOD              DETAILS                              AVAILABILITY
+---------------------------------------------------------------------
+Website             Login -> My Orders -> Track         24/7
+Mobile App          Orders tab -> Select order          24/7
+SMS                 Text TRACK <Order ID> to 567890     24/7
+Email               Check order confirmation email      Instant
+WhatsApp            Message +91-9876543210              9 AM - 9 PM
+
+Order Status Explained
+----------------------
+ORDER CONFIRMED
+- Payment received and processing started
+- Expected Timeline: 0-2 hours
+
+PACKED
+- Packed and assigned for courier pickup
+- Expected Timeline: 2-24 hours
+
+SHIPPED
+- In transit to destination
+- Expected Timeline: 1-5 days
+
+OUT FOR DELIVERY
+- Local courier delivery in progress
+- Expected Timeline: Same day
+
+DELIVERED
+- Successfully delivered
+
+Tracking updates every 2-4 hours.
+
+================================================================================
+RETURN & REFUND POLICY
+================================================================================
+
+Return Window
+-------------
+PRODUCT CATEGORY                    RETURN PERIOD    CONDITION REQUIRED
+------------------------------------------------------------------------
+Electronics (Laptops, Phones)       30 days          Unopened box, all accessories
+Accessories (Chargers, Cases)       30 days          Original packaging
+Smart Home Devices                  20 days          Factory reset, original box
+Damaged/Defective Items             72 hours         As received, with photos
+
+How to Initiate a Return
+------------------------
+Step 1: Login to TechMart -> My Orders -> Select order -> Click Return
+Step 2: Select reason (Damaged, Wrong item, Not as described, Changed mind)
+Step 3: Upload photos (mandatory for damage claims)
+Step 4: Choose pickup slot (same day or next day)
+Step 5: Courier pickup at doorstep (free pickup)
+Step 6: Refund processed within 3-5 business days after quality check
+
+Non-Returnable Items
+--------------------
+- Software license keys (activated)
+- Earphones and headphones (opened)
+- Items without original invoice
+- Products damaged by customer misuse
+
+================================================================================
+SHIPPING & DELIVERY
+================================================================================
+
+Delivery Timeline
+-----------------
+LOCATION                    STANDARD DELIVERY    EXPRESS DELIVERY    DELIVERY CHARGES
+-------------------------------------------------------------------------------------
+Metro Cities                2-3 days             Next day            Free above INR 500
+Tier 1 Cities               3-5 days             2-3 days            Free above INR 500
+Tier 2 Cities               5-7 days             3-4 days            Free above INR 500
+Remote Areas                7-10 days            Not available       INR 100 flat
+
+================================================================================
+CUSTOMER SUPPORT
+================================================================================
+
+Contact Channels
+----------------
+CHANNEL         AVAILABILITY       CONTACT DETAILS              RESPONSE TIME
+-----------------------------------------------------------------------------
+Phone           24/7               1800-123-4567 (Toll-free)   Immediate
+WhatsApp        9 AM - 9 PM        +91-9876543210              < 5 minutes
+Email           24/7               support@techmart.com        < 2 hours
+Live Chat       9 AM - 11 PM       Website/App chat button     < 2 minutes
+
+================================================================================
+
+TechMart Electronics Private Limited
+Corporate Office: 123 Tech Park, MG Road, Bangalore - 560001
+Website: www.techmart.com | Email: info@techmart.com

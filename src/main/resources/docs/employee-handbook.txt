@@ -1,0 +1,17 @@
+Employee Handbook (Internal)
+
+Work Hours:
+- Standard business hours are 9:00 AM to 6:00 PM local time.
+- Flexible scheduling may be approved by reporting managers.
+
+Leave Policy:
+- Paid time off (PTO) is accrued monthly.
+- Sick leave can be availed as per HR guidelines.
+
+Code of Conduct:
+- Maintain professional behavior in all communication channels.
+- Follow company data security and confidentiality policies.
+
+Remote Work:
+- Employees must follow approved remote work guidelines.
+- Security controls (VPN, MFA) are mandatory for remote access.

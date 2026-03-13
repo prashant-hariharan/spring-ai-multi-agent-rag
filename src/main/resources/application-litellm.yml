@@ -1,0 +1,48 @@
+spring:
+  config:
+    activate:
+      on-profile: litellm
+  ai:
+    openai:
+      api-key: ${LITELLM_MASTER_KEY:sk-litellm-dev}
+      base-url: ${LITELLM_BASE_URL:http://localhost:4000}
+      embedding:
+        options:
+          model: openai-embedding
+      chat:
+        options:
+          model: openai
+          temperature: 0.7
+          max-tokens: 500
+    providers:
+      gemini:
+        api-key: ${LITELLM_MASTER_KEY:sk-litellm-dev}
+        model: gemini
+        temperature: 0.7
+        max-tokens: 750
+        base-url: ${LITELLM_BASE_URL:http://localhost:4000}
+        completion-path: /v1/chat/completions
+      groq:
+        api-key: ${LITELLM_MASTER_KEY:sk-litellm-dev}
+        model: groq
+        temperature: 0.7
+        max-tokens: 500
+        base-url: ${LITELLM_BASE_URL:http://localhost:4000}
+        completion-path: /v1/chat/completions
+      ollama:
+        api-key: ${LITELLM_MASTER_KEY:sk-litellm-dev}
+        model: ollama
+        temperature: 0.7
+        max-tokens: 500
+        base-url: ${LITELLM_BASE_URL:http://localhost:4000}
+        completion-path: /v1/chat/completions
+
+app:
+  ai:
+    guardrails:
+      enabled: false
+  rag:
+    retrieval:
+      default-top-k: 3
+      combined-top-k: 5
+      similarity-threshold: 0.6

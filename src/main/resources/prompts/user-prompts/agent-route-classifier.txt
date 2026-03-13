@@ -1,0 +1,29 @@
+Classify the user question into exactly one route and one intent.
+
+Route enum:
+- RAG: Question is about policy, documentation, rules, knowledge-base content.
+- TOOLS: Question is about transactional order operations/details (status, tracking, cancellation, delivery updates), typically tied to a specific order number.
+- COMBINED: User asks for both policy/documentation and order transaction details in the same question.
+- GENERAL: Question is not related to either policy/doc retrieval or order transaction details.
+
+Intent enum:
+- POLICY
+- EMPLOYEE_HANDBOOK
+- POLICY_AND_EMPLOYEE
+- NONE
+
+Intent rules:
+- If route is TOOLS or GENERAL, intent must be NONE.
+- If route is RAG or COMBINED, choose:
+  - POLICY for e-commerce policy/rules related requests.
+  - EMPLOYEE_HANDBOOK for employee/internal HR/handbook requests.
+  - POLICY_AND_EMPLOYEE only if both are explicitly requested.
+
+Order number extracted (if any): {ORDER_NUMBER}
+User question: {QUESTION}
+
+Return strict JSON only with this exact schema:
+- key `route` with one of: RAG, TOOLS, COMBINED, GENERAL
+- key `intent` with one of: POLICY, EMPLOYEE_HANDBOOK, POLICY_AND_EMPLOYEE, NONE
+- no extra keys
+- no markdown

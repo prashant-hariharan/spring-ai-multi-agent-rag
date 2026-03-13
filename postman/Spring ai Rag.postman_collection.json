@@ -1,0 +1,235 @@
+{
+  "info": {
+    "_postman_id": "6572b337-7456-4dc4-9cb6-fe4e3c511794",
+    "name": "Spring ai Rag",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "30434122",
+    "_collection_link": "https://go.postman.co/collection/30434122-6572b337-7456-4dc4-9cb6-fe4e3c511794?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Document ingestion - RAG",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "uuid": "53eb7f3f-7600-4c7c-9bcf-93de5427819a",
+              "src": "/C:/prashant/SelfLearning/AI/java/spring-ai-rag/src/main/resources/docs/ecommerce-policy-special-customer.pdf"
+            },
+            {
+              "key": "type",
+              "value": "POLICY",
+              "type": "text",
+              "uuid": "2eeb69f6-6bfb-4e48-b7f4-9c86c9237cfc"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:8080/rag/upload",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "rag",
+            "upload"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Ask Question - RAG",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "ai-provider",
+            "value": "openai",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"question\": \"return policy for electronic goods?My email is abcd@gmail.com\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8080/rag/query?fileName=ecommerce-policy-special-customer.pdf",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "rag",
+            "query"
+          ],
+          "query": [
+            {
+              "key": "fileName",
+              "value": "ecommerce-policy-special-customer.pdf"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Ask Question - RAG -Sensitive info- With Lite llm",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "ai-provider",
+            "value": "gemini",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"question\": \"What is the return policy for electronic goods?My email is abcd@gmail.com and SSN is 123-45-6789\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8080/rag/query?fileName=ecommerce-policy-special-customer.pdf",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "rag",
+            "query"
+          ],
+          "query": [
+            {
+              "key": "fileName",
+              "value": "ecommerce-policy-special-customer.pdf"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Order Tracking - tools",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "ai-provider",
+            "value": "openai",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8080/order-tracking?orderNumber=ORD-0003&userMessage=What is the status of my order",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "order-tracking"
+          ],
+          "query": [
+            {
+              "key": "orderNumber",
+              "value": "ORD-0003"
+            },
+            {
+              "key": "userMessage",
+              "value": "What is the status of my order"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Ask Question about policy and order(tools + rag)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "ai-provider",
+            "value": "openai",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"query\": \"Can I return my order ORD-0003?Wahts its status. Also check policy.\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8080/agent/query",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "agent",
+            "query"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Ask Question - Random(non tool, non rag)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "ai-provider",
+            "value": "openai",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"query\": \"My Name is Prashant Hariharan. Whats my last name?\"\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8080/agent/query",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "agent",
+            "query"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}
