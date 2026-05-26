@@ -1,7 +1,3 @@
--- Ensure required PostgreSQL extensions are available in ai_ecommerce database.
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 -- Spring AI PgVector default table structure with JSONB metadata.
 CREATE TABLE IF NOT EXISTS public.vector_store (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
