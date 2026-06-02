@@ -27,10 +27,14 @@ CREATE TABLE IF NOT EXISTS public.rag_document_catalog (
     file_name varchar(255) NOT NULL,
     document_type varchar(50) NOT NULL,
     source_system varchar(100) NOT NULL,
+    latest_version integer NOT NULL DEFAULT 0,
     indexed_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uk_rag_doc_catalog_file_type UNIQUE (file_name, document_type)
 );
+
+ALTER TABLE IF EXISTS public.rag_document_catalog
+    ADD COLUMN IF NOT EXISTS latest_version integer NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS rag_document_catalog_document_type_idx
     ON public.rag_document_catalog (document_type);

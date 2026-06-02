@@ -3,6 +3,10 @@
 
 # you can ignore files
 .env
+.env.*
+!.env.example
+.idea/
+*.iml
 secrets/
 *.pem
 

@@ -19,7 +19,6 @@ import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -229,26 +228,37 @@ public class RAGQueryService {
   }
 
   private String buildFilterExpression(Collection<String> fileNames) {
-    if (fileNames == null || fileNames.isEmpty()) {
-      return null;
-    }
+    List<String> normalizedFileNames = normalizeFileNames(fileNames);
+    List<RagDocumentCatalog> catalogRecords = findCatalogRecordsForScope(normalizedFileNames);
 
-    List<String> normalizedFileNames = new ArrayList<>();
-    for (String fileName : fileNames) {
-      if (StringUtils.hasText(fileName)) {
-        normalizedFileNames.add(fileName.trim());
+    if (catalogRecords.isEmpty()) {
+      if (!normalizedFileNames.isEmpty()) {
+        return "fileName == '__NO_MATCH__'";
       }
-    }
-
-    if (normalizedFileNames.isEmpty()) {
       return null;
     }
 
-    StringJoiner fileFilters = new StringJoiner(" || ");
-    for (String fileName : normalizedFileNames) {
-      fileFilters.add("fileName == '" + escapeFilterValue(fileName) + "'");
+    StringJoiner latestVersionFilters = new StringJoiner(" || ");
+    for (RagDocumentCatalog catalogRecord : catalogRecords) {
+      latestVersionFilters.add(buildLatestVersionFilter(catalogRecord));
     }
-    return "(" + fileFilters + ")";
+    return "(" + latestVersionFilters + ")";
+  }
+
+  private List<RagDocumentCatalog> findCatalogRecordsForScope(List<String> normalizedFileNames) {
+    if (normalizedFileNames.isEmpty()) {
+      return ragDocumentCatalogRepository.findAll();
+    }
+    return ragDocumentCatalogRepository.findAllByFileNameIn(normalizedFileNames);
+  }
+
+  private String buildLatestVersionFilter(RagDocumentCatalog catalogRecord) {
+    String filter = "fileName == '" + escapeFilterValue(catalogRecord.getFileName()) + "'"
+      + " && documentType == '" + escapeFilterValue(catalogRecord.getDocumentType().name()) + "'";
+    if (catalogRecord.getLatestVersion() > 0) {
+      filter += " && documentVersion == " + catalogRecord.getLatestVersion();
+    }
+    return "(" + filter + ")";
   }
 
   private List<String> resolveEffectiveFileNames(Collection<String> explicitFileNames, AgentIntent intent) {

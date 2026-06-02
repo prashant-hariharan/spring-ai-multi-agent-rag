@@ -12,5 +12,7 @@ import java.util.UUID;
 public interface RagDocumentCatalogRepository extends JpaRepository<RagDocumentCatalog, UUID> {
   Optional<RagDocumentCatalog> findByFileNameAndDocumentType(String fileName, RagDocumentType documentType);
 
+  List<RagDocumentCatalog> findAllByFileNameIn(Collection<String> fileNames);
+
   List<RagDocumentCatalog> findAllByDocumentTypeIn(Collection<RagDocumentType> documentTypes);
 }
