@@ -76,8 +76,28 @@ public class RAGQueryService {
   }
 
   public String askQuestionWithAgentIntent(String question, String aiProvider, AgentIntent intent) {
-    List<String> resolvedFileNames = resolveEffectiveFileNames(Collections.emptyList(), intent);
-    return askQuestion(question, aiProvider, resolvedFileNames);
+    RagRetrievalScope retrievalScope = resolveRetrievalScopeForIntent(intent);
+    String cacheKey = buildRagQueryCacheKey(question, aiProvider, retrievalScope.cacheScope());
+    Cache cache = cacheManager.getCache(CacheConfig.RAG_QUERY_RESPONSE_CACHE);
+    if (cache != null) {
+      String cached = cache.get(cacheKey, String.class);
+      if (cached != null) {
+        log.info("[{}] HIT key={} -> returning cached response (LLM not invoked)",
+          CacheConfig.RAG_QUERY_RESPONSE_CACHE, cacheKey);
+        return cached;
+      }
+      log.info("[{}] MISS key={} -> running retrieval + LLM",
+        CacheConfig.RAG_QUERY_RESPONSE_CACHE, cacheKey);
+    }
+
+    String response = generateRagAnswer(question, aiProvider, retrievalScope);
+    if (cache != null && shouldCache(response)) {
+      cache.put(cacheKey, response);
+      log.info("[{}] STORE key={}", CacheConfig.RAG_QUERY_RESPONSE_CACHE, cacheKey);
+    } else if (cache != null) {
+      log.info("[{}] SKIP-STORE key={} -> fallback/error response", CacheConfig.RAG_QUERY_RESPONSE_CACHE, cacheKey);
+    }
+    return response;
   }
 
   public String fetchRelevantContext(String question, Collection<String> fileNames) {
@@ -109,8 +129,31 @@ public class RAGQueryService {
   }
 
   public String fetchRelevantContextWithAgentIntent(String question, AgentIntent intent) {
-    List<String> resolvedFileNames = resolveEffectiveFileNames(Collections.emptyList(), intent);
-    return fetchRelevantContext(question, resolvedFileNames);
+    if (!StringUtils.hasText(question)) {
+      return "";
+    }
+    RagRetrievalScope retrievalScope = resolveRetrievalScopeForIntent(intent);
+    String cacheKey = buildRagContextCacheKey(question, retrievalScope.cacheScope());
+    Cache cache = cacheManager.getCache(CacheConfig.RAG_CONTEXT_CACHE);
+    if (cache != null) {
+      String cached = cache.get(cacheKey, String.class);
+      if (cached != null) {
+        log.info("[{}] HIT key={} -> returning cached context (retrieval not invoked)",
+          CacheConfig.RAG_CONTEXT_CACHE, cacheKey);
+        return cached;
+      }
+      log.info("[{}] MISS key={} -> running retrieval",
+        CacheConfig.RAG_CONTEXT_CACHE, cacheKey);
+    }
+
+    String context = fetchRelevantContextInternal(question, retrievalScope);
+    if (cache != null && StringUtils.hasText(context)) {
+      cache.put(cacheKey, context);
+      log.info("[{}] STORE key={}", CacheConfig.RAG_CONTEXT_CACHE, cacheKey);
+    } else if (cache != null) {
+      log.info("[{}] SKIP-STORE key={} -> empty context", CacheConfig.RAG_CONTEXT_CACHE, cacheKey);
+    }
+    return context;
   }
 
   public String buildRagQueryCacheKeyFromFileName(String question, String aiProvider, String fileName) {
@@ -132,6 +175,10 @@ public class RAGQueryService {
   }
 
   private String generateRagAnswer(String question, String aiProvider, Collection<String> fileNames) {
+    return generateRagAnswer(question, aiProvider, resolveRetrievalScope(fileNames));
+  }
+
+  private String generateRagAnswer(String question, String aiProvider, RagRetrievalScope retrievalScope) {
     log.info("RAG question: {}", question);
 
     if (!StringUtils.hasText(question)) {
@@ -139,7 +186,7 @@ public class RAGQueryService {
     }
 
     try {
-      List<Document> relevantDocs = retrieveRelevantDocs(question, fileNames, defaultTopK, similarityThreshold);
+      List<Document> relevantDocs = retrieveRelevantDocs(question, retrievalScope, defaultTopK, similarityThreshold);
 
       if (relevantDocs.isEmpty()) {
         log.warn("No relevant documents found");
@@ -177,8 +224,12 @@ public class RAGQueryService {
   }
 
   private String fetchRelevantContextInternal(String question, Collection<String> fileNames) {
+    return fetchRelevantContextInternal(question, resolveRetrievalScope(fileNames));
+  }
+
+  private String fetchRelevantContextInternal(String question, RagRetrievalScope retrievalScope) {
     try {
-      List<Document> relevantDocs = retrieveRelevantDocs(question, fileNames, combinedTopK, similarityThreshold);
+      List<Document> relevantDocs = retrieveRelevantDocs(question, retrievalScope, combinedTopK, similarityThreshold);
       if (relevantDocs.isEmpty()) {
         return "";
       }
@@ -199,11 +250,20 @@ public class RAGQueryService {
     int topK,
     double similarityThreshold
   ) {
+    return retrieveRelevantDocs(question, resolveRetrievalScope(fileNames), topK, similarityThreshold);
+  }
+
+  private List<Document> retrieveRelevantDocs(
+    String question,
+    RagRetrievalScope retrievalScope,
+    int topK,
+    double similarityThreshold
+  ) {
     SearchRequest.Builder searchRequestBuilder = SearchRequest.builder()
       .query(question)
       .topK(topK);
 
-    String filterExpression = buildFilterExpression(fileNames);
+    String filterExpression = buildFilterExpression(retrievalScope);
     if (StringUtils.hasText(filterExpression)) {
       log.info("Applying metadata filter for retrieval: {}", filterExpression);
       searchRequestBuilder.filterExpression(filterExpression);
@@ -228,21 +288,30 @@ public class RAGQueryService {
   }
 
   private String buildFilterExpression(Collection<String> fileNames) {
-    List<String> normalizedFileNames = normalizeFileNames(fileNames);
-    List<RagDocumentCatalog> catalogRecords = findCatalogRecordsForScope(normalizedFileNames);
+    return buildFilterExpression(resolveRetrievalScope(fileNames));
+  }
 
-    if (catalogRecords.isEmpty()) {
-      if (!normalizedFileNames.isEmpty()) {
+  private String buildFilterExpression(RagRetrievalScope retrievalScope) {
+    if (retrievalScope.catalogRecords().isEmpty()) {
+      if (!retrievalScope.fileNames().isEmpty()) {
         return "fileName == '__NO_MATCH__'";
       }
       return null;
     }
 
     StringJoiner latestVersionFilters = new StringJoiner(" || ");
-    for (RagDocumentCatalog catalogRecord : catalogRecords) {
+    for (RagDocumentCatalog catalogRecord : retrievalScope.catalogRecords()) {
       latestVersionFilters.add(buildLatestVersionFilter(catalogRecord));
     }
     return "(" + latestVersionFilters + ")";
+  }
+
+  private RagRetrievalScope resolveRetrievalScope(Collection<String> fileNames) {
+    List<String> normalizedFileNames = normalizeFileNames(fileNames);
+    return new RagRetrievalScope(
+      normalizedFileNames,
+      findCatalogRecordsForScope(normalizedFileNames)
+    );
   }
 
   private List<RagDocumentCatalog> findCatalogRecordsForScope(List<String> normalizedFileNames) {
@@ -286,6 +355,27 @@ public class RAGQueryService {
     log.info("No file scope derived from catalog for intent={} and documentTypes={}. Falling back to unfiltered retrieval.",
       intent, documentTypes);
     return Collections.emptyList();
+  }
+
+  private RagRetrievalScope resolveRetrievalScopeForIntent(AgentIntent intent) {
+    List<RagDocumentType> documentTypes = mapIntentToDocumentTypes(intent);
+    List<RagDocumentCatalog> catalogRecords = documentTypes.isEmpty()
+      ? ragDocumentCatalogRepository.findAll()
+      : ragDocumentCatalogRepository.findAllByDocumentTypeIn(documentTypes);
+
+    List<String> catalogFileNames = normalizeFileNames(
+      catalogRecords.stream().map(RagDocumentCatalog::getFileName).toList()
+    );
+
+    if (!catalogFileNames.isEmpty()) {
+      log.info("Resolved RAG catalog scope for intent={} and documentTypes={}: {}",
+        intent, documentTypes, catalogFileNames);
+      return new RagRetrievalScope(catalogFileNames, catalogRecords);
+    }
+
+    log.info("No file scope derived from catalog for intent={} and documentTypes={}. Falling back to unfiltered retrieval.",
+      intent, documentTypes);
+    return new RagRetrievalScope(Collections.emptyList(), Collections.emptyList());
   }
 
   private List<RagDocumentType> mapIntentToDocumentTypes(AgentIntent intent) {
@@ -351,5 +441,20 @@ public class RAGQueryService {
     return !normalized.contains("something went wrong")
       && !normalized.contains("don't have information")
       && !normalized.contains("unable to answer");
+  }
+
+  private record RagRetrievalScope(
+    List<String> fileNames,
+    List<RagDocumentCatalog> catalogRecords
+  ) {
+    private Collection<String> cacheScope() {
+      if (catalogRecords.isEmpty()) {
+        return fileNames;
+      }
+      return catalogRecords.stream()
+        .map(record -> record.getDocumentType().name() + ":" + record.getFileName())
+        .sorted()
+        .toList();
+    }
   }
 }
