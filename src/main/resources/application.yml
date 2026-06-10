@@ -46,6 +46,9 @@ app:
       enabled: false
     guardrails:
       enabled: true
+    evaluation:
+      enabled: true
+      max-attempts: 2
   rag:
     retrieval:
       default-top-k: 6

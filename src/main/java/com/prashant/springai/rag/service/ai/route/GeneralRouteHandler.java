@@ -20,26 +20,42 @@ public class GeneralRouteHandler implements AgentRouteHandler {
   }
 
   @Override
-  public AgentQueryResponse handle(String question, String orderNumber, AgentIntent intent, String aiProvider) {
+  public RouteExecutionResult handle(
+    String question,
+    String orderNumber,
+    AgentIntent intent,
+    String aiProvider,
+    String retryInstruction
+  ) {
     if (!multiModelProviderService.getChatClients().containsKey(AIProviderConstants.OLLAMA)) {
-      return new AgentQueryResponse(
-        true,
-        route().name(),
-        "No cheaper model is configured right now. Please configure 'ollama' or try another provider.",
-        null
+      return new RouteExecutionResult(
+        new AgentQueryResponse(
+          true,
+          route().name(),
+          "No cheaper model is configured right now. Please configure 'ollama' or try another provider.",
+          null
+        ),
+        ""
       );
     }
+
+    String effectiveQuestion = question;
+    if (retryInstruction != null && !retryInstruction.isBlank()) {
+      effectiveQuestion = question + "\n\nValidation feedback for retry:\n" + retryInstruction
+        + "\nRevise the answer so it directly answers the user query.";
+    }
+    String finalQuestion = effectiveQuestion;
 
     String answer = multiModelProviderService.executeWithTimeoutOrFallback(
       "general route response generation",
       () -> multiModelProviderService.getChatClient(AIProviderConstants.OLLAMA)
         .prompt()
-        .user(question)
+        .user(finalQuestion)
         .call()
         .content(),
       "Something went wrong while generating the response. Please try again."
     );
 
-    return new AgentQueryResponse(true, route().name(), answer, null);
+    return new RouteExecutionResult(new AgentQueryResponse(true, route().name(), answer, null), "");
   }
 }

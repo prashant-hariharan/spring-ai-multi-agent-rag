@@ -41,8 +41,27 @@ app:
   ai:
     guardrails:
       enabled: false
+    evaluation:
+      enabled: true
+      max-attempts: 2
   rag:
     retrieval:
-      default-top-k: 3
-      combined-top-k: 5
-      similarity-threshold: 0.6
+      default-top-k: 6
+      combined-top-k: 8
+      similarity-threshold: 0.30
+  cache:
+    intent:
+      ttl-minutes: 30
+      max-size: 5000
+    order-read:
+      ttl-seconds: 60
+      max-size: 10000
+    order-llm:
+      ttl-seconds: 45
+      max-size: 5000
+    rag-answer:
+      ttl-seconds: 120
+      max-size: 5000
+    rag-context:
+      ttl-seconds: 120
+      max-size: 5000

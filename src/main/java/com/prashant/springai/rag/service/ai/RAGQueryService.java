@@ -50,6 +50,12 @@ public class RAGQueryService {
   @Value("${app.rag.retrieval.similarity-threshold:0.35}")
   private double similarityThreshold;
 
+  public record RagAnswerResult(
+    String answer,
+    String evidence
+  ) {
+  }
+
   public String askQuestion(String question, String aiProvider, Collection<String> fileNames) {
     List<String> resolvedFileNames = resolveEffectiveFileNames(fileNames, null);
     String cacheKey = buildRagQueryCacheKey(question, aiProvider, resolvedFileNames);
@@ -76,28 +82,40 @@ public class RAGQueryService {
   }
 
   public String askQuestionWithAgentIntent(String question, String aiProvider, AgentIntent intent) {
+    return askQuestionWithAgentIntentAndEvidence(question, aiProvider, intent, null).answer();
+  }
+
+  public RagAnswerResult askQuestionWithAgentIntentAndEvidence(
+    String question,
+    String aiProvider,
+    AgentIntent intent,
+    String retryInstruction
+  ) {
     RagRetrievalScope retrievalScope = resolveRetrievalScopeForIntent(intent);
     String cacheKey = buildRagQueryCacheKey(question, aiProvider, retrievalScope.cacheScope());
     Cache cache = cacheManager.getCache(CacheConfig.RAG_QUERY_RESPONSE_CACHE);
-    if (cache != null) {
+    boolean retry = StringUtils.hasText(retryInstruction);
+    String evidence = fetchRelevantContextInternal(question, retrievalScope, defaultTopK);
+
+    if (!retry && cache != null) {
       String cached = cache.get(cacheKey, String.class);
       if (cached != null) {
         log.info("[{}] HIT key={} -> returning cached response (LLM not invoked)",
           CacheConfig.RAG_QUERY_RESPONSE_CACHE, cacheKey);
-        return cached;
+        return new RagAnswerResult(cached, evidence);
       }
       log.info("[{}] MISS key={} -> running retrieval + LLM",
         CacheConfig.RAG_QUERY_RESPONSE_CACHE, cacheKey);
     }
 
-    String response = generateRagAnswer(question, aiProvider, retrievalScope);
-    if (cache != null && shouldCache(response)) {
+    String response = generateRagAnswerFromContext(question, aiProvider, evidence, retryInstruction);
+    if (!retry && cache != null && shouldCache(response)) {
       cache.put(cacheKey, response);
       log.info("[{}] STORE key={}", CacheConfig.RAG_QUERY_RESPONSE_CACHE, cacheKey);
-    } else if (cache != null) {
+    } else if (!retry && cache != null) {
       log.info("[{}] SKIP-STORE key={} -> fallback/error response", CacheConfig.RAG_QUERY_RESPONSE_CACHE, cacheKey);
     }
-    return response;
+    return new RagAnswerResult(response, evidence);
   }
 
   public String fetchRelevantContext(String question, Collection<String> fileNames) {
@@ -186,34 +204,8 @@ public class RAGQueryService {
     }
 
     try {
-      List<Document> relevantDocs = retrieveRelevantDocs(question, retrievalScope, defaultTopK, similarityThreshold);
-
-      if (relevantDocs.isEmpty()) {
-        log.warn("No relevant documents found");
-        return "I don't have information about that in my knowledge base.";
-      }
-
-      log.info("Found {} relevant document(s)", relevantDocs.size());
-
-      String context = relevantDocs.stream()
-        .map(Document::getFormattedContent)
-        .collect(Collectors.joining("\n\n"));
-
-      String userPromptTemplate = PromptReaderUtil.getPrompt(resourceLoader, RAG_QUERY_USER_PROMPT_PATH);
-      String userPrompt = userPromptTemplate.formatted(question, context);
-
-      String answer = multiModelProviderService.executeWithTimeoutOrFallback(
-        "RAG query answer generation",
-        () -> multiModelProviderService.getChatClient(aiProvider)
-          .prompt()
-          .user(userPrompt)
-          .call()
-          .content(),
-        "Something went wrong while generating the response. Please try again."
-      );
-
-      log.info("Answer generated successfully");
-      return answer;
+      String context = fetchRelevantContextInternal(question, retrievalScope, defaultTopK);
+      return generateRagAnswerFromContext(question, aiProvider, context, null);
 
     } catch (NonTransientAiException e) {
       throw e;
@@ -223,13 +215,54 @@ public class RAGQueryService {
     }
   }
 
+  private String generateRagAnswerFromContext(
+    String question,
+    String aiProvider,
+    String context,
+    String retryInstruction
+  ) {
+    if (!StringUtils.hasText(question)) {
+      return "Please provide a question.";
+    }
+    if (!StringUtils.hasText(context)) {
+      log.warn("No relevant documents found");
+      return "I don't have information about that in my knowledge base.";
+    }
+
+    String userPromptTemplate = PromptReaderUtil.getPrompt(resourceLoader, RAG_QUERY_USER_PROMPT_PATH);
+    String initialUserPrompt = userPromptTemplate.formatted(question, context);
+    String userPrompt = initialUserPrompt;
+    if (StringUtils.hasText(retryInstruction)) {
+      userPrompt = userPrompt + "\n\nValidation feedback for retry:\n" + retryInstruction
+        + "\nRevise the answer so every factual claim is supported by the context.";
+    }
+    String finalUserPrompt = userPrompt;
+
+    String answer = multiModelProviderService.executeWithTimeoutOrFallback(
+      "RAG query answer generation",
+      () -> multiModelProviderService.getChatClient(aiProvider)
+        .prompt()
+        .user(finalUserPrompt)
+        .call()
+        .content(),
+      "Something went wrong while generating the response. Please try again."
+    );
+
+    log.info("Answer generated successfully");
+    return answer;
+  }
+
   private String fetchRelevantContextInternal(String question, Collection<String> fileNames) {
     return fetchRelevantContextInternal(question, resolveRetrievalScope(fileNames));
   }
 
   private String fetchRelevantContextInternal(String question, RagRetrievalScope retrievalScope) {
+    return fetchRelevantContextInternal(question, retrievalScope, combinedTopK);
+  }
+
+  private String fetchRelevantContextInternal(String question, RagRetrievalScope retrievalScope, int topK) {
     try {
-      List<Document> relevantDocs = retrieveRelevantDocs(question, retrievalScope, combinedTopK, similarityThreshold);
+      List<Document> relevantDocs = retrieveRelevantDocs(question, retrievalScope, topK, similarityThreshold);
       if (relevantDocs.isEmpty()) {
         return "";
       }
