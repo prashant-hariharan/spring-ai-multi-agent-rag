@@ -11,6 +11,7 @@ import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
@@ -37,19 +38,21 @@ public class RAGIngesterService {
     cacheNames = {CacheConfig.RAG_QUERY_RESPONSE_CACHE, CacheConfig.RAG_CONTEXT_CACHE},
     allEntries = true
   )
-  public int loadAndIndexDocumentFromString(String content, String filename, RagDocumentType documentType) {
+  @Transactional
+  public IndexedDocumentResult loadAndIndexDocumentFromString(String content, String filename, RagDocumentType documentType) {
     try {
       log.info("Indexing document: {}", filename);
       String normalizedFileName = normalizeFileName(filename);
       RagDocumentType normalizedDocumentType = Objects.requireNonNull(documentType, "Document type is required.");
-      replaceExistingEmbeddingsForFile(normalizedFileName);
-      upsertDocumentCatalog(normalizedFileName, normalizedDocumentType);
+      RagDocumentCatalog catalogRecord = createNextDocumentCatalogVersion(normalizedFileName, normalizedDocumentType);
+      int documentVersion = catalogRecord.getLatestVersion();
 
       Document document = new Document(
         content,
-        buildMetadata(normalizedFileName, "classpath", null, normalizedDocumentType)
+        buildMetadata(normalizedFileName, "classpath", null, normalizedDocumentType, documentVersion)
       );
-      return splitAndIndex(List.of(document), normalizedFileName);
+      int chunks = splitAndIndex(List.of(document), normalizedFileName);
+      return new IndexedDocumentResult(chunks, documentVersion);
 
     } catch (Exception e) {
       log.error("Error indexing document: {}", filename, e);
@@ -64,35 +67,32 @@ public class RAGIngesterService {
     return fileName.trim();
   }
 
-  private void replaceExistingEmbeddingsForFile(String fileName) {
-    String filterExpression = "fileName == '" + escapeFilterValue(fileName) + "'";
-    log.info("Removing existing embeddings for fileName={}", fileName);
-    vectorStore.delete(filterExpression);
-  }
-
-  private String escapeFilterValue(String value) {
-    return value.replace("'", "\\'");
-  }
-
-  private void upsertDocumentCatalog(String fileName, RagDocumentType documentType) {
+  private RagDocumentCatalog createNextDocumentCatalogVersion(String fileName, RagDocumentType documentType) {
     RagDocumentCatalog catalogRecord = ragDocumentCatalogRepository.findByFileNameAndDocumentType(fileName, documentType)
       .orElseGet(RagDocumentCatalog::new);
+    int nextVersion = catalogRecord.getLatestVersion() + 1;
     catalogRecord.setFileName(fileName);
     catalogRecord.setDocumentType(documentType);
     catalogRecord.setSourceSystem("classpath");
+    catalogRecord.setLatestVersion(nextVersion);
     catalogRecord.setIndexedAt(Instant.now());
-    ragDocumentCatalogRepository.save(catalogRecord);
+    RagDocumentCatalog savedCatalogRecord = ragDocumentCatalogRepository.save(catalogRecord);
+    log.info("Created document version {} for fileName={} documentType={}",
+      savedCatalogRecord.getLatestVersion(), fileName, documentType);
+    return savedCatalogRecord;
   }
 
   private Map<String, Object> buildMetadata(
     String fileName,
     String sourceSystem,
     String sourcePath,
-    RagDocumentType documentType
+    RagDocumentType documentType,
+    int documentVersion
   ) {
     Map<String, Object> metadata = new HashMap<>();
     metadata.put("fileName", fileName);
     metadata.put("documentType", documentType.name());
+    metadata.put("documentVersion", documentVersion);
     metadata.put("sourceSystem", sourceSystem);
     metadata.put("indexedAt", Instant.now().toString());
     if (StringUtils.hasText(sourcePath)) {
@@ -119,5 +119,8 @@ public class RAGIngesterService {
       MAX_NUM_CHUNKS,
       KEEP_SEPARATOR
     );
+  }
+
+  public record IndexedDocumentResult(int chunks, int version) {
   }
 }

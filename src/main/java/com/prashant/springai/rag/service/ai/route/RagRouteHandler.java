@@ -4,6 +4,7 @@ import com.prashant.springai.rag.dto.AgentQueryResponse;
 import com.prashant.springai.rag.model.AgentIntent;
 import com.prashant.springai.rag.model.AgentRoute;
 import com.prashant.springai.rag.service.ai.RAGQueryService;
+import com.prashant.springai.rag.service.ai.RAGQueryService.RagAnswerResult;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -19,8 +20,22 @@ public class RagRouteHandler implements AgentRouteHandler {
   }
 
   @Override
-  public AgentQueryResponse handle(String question, String orderNumber, AgentIntent intent, String aiProvider) {
-    String answer = ragQueryService.askQuestionWithAgentIntent(question, aiProvider, intent);
-    return new AgentQueryResponse(true, route().name(), answer, null);
+  public RouteExecutionResult handle(
+    String question,
+    String orderNumber,
+    AgentIntent intent,
+    String aiProvider,
+    String retryInstruction
+  ) {
+    RagAnswerResult result = ragQueryService.askQuestionWithAgentIntentAndEvidence(
+      question,
+      aiProvider,
+      intent,
+      retryInstruction
+    );
+    return new RouteExecutionResult(
+      new AgentQueryResponse(true, route().name(), result.answer(), null),
+      result.evidence()
+    );
   }
 }

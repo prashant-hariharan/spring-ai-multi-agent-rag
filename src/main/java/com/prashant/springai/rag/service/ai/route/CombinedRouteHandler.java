@@ -38,16 +38,28 @@ public class CombinedRouteHandler implements AgentRouteHandler {
   }
 
   @Override
-  public AgentQueryResponse handle(String question, String orderNumber, AgentIntent intent, String aiProvider) {
+  public RouteExecutionResult handle(
+    String question,
+    String orderNumber,
+    AgentIntent intent,
+    String aiProvider,
+    String retryInstruction
+  ) {
     if (!StringUtils.hasText(orderNumber)) {
-      return new AgentQueryResponse(false, route().name(), null, ORDER_NUMBER_REQUIRED_MESSAGE);
+      return new RouteExecutionResult(
+        new AgentQueryResponse(false, route().name(), null, ORDER_NUMBER_REQUIRED_MESSAGE),
+        ""
+      );
     }
 
     OrderDTO order;
     try {
       order = orderService.getOrderByNumber(orderNumber);
     } catch (InvalidInputException | ResourceNotFoundException ex) {
-      return new AgentQueryResponse(false, route().name(), null, ex.getMessage());
+      return new RouteExecutionResult(
+        new AgentQueryResponse(false, route().name(), null, ex.getMessage()),
+        ""
+      );
     }
 
     String policyContext = ragQueryService.fetchRelevantContextWithAgentIntent(question, intent);
@@ -63,17 +75,27 @@ public class CombinedRouteHandler implements AgentRouteHandler {
       "POLICY_CONTEXT", policyContext
     );
 
+    String userPrompt = template.create(substitutionVariables).getContents();
+    if (StringUtils.hasText(retryInstruction)) {
+      userPrompt = userPrompt + "\n\nValidation feedback for retry:\n" + retryInstruction
+        + "\nRevise the answer so every claim is supported by the order facts or policy context.";
+    }
+    String finalUserPrompt = userPrompt;
+
     String combinedAnswer = multiModelProviderService.executeWithTimeoutOrFallback(
       "combined route synthesis",
       () -> multiModelProviderService.getChatClient(aiProvider)
         .prompt()
-        .user(template.create(substitutionVariables).getContents())
+        .user(finalUserPrompt)
         .call()
         .content(),
       "Something went wrong while combining policy and order details. Please try again."
     );
 
-    return new AgentQueryResponse(true, route().name(), combinedAnswer, null);
+    return new RouteExecutionResult(
+      new AgentQueryResponse(true, route().name(), combinedAnswer, null),
+      "Order facts:\n" + formatOrderFacts(order) + "\n\nPolicy context:\n" + policyContext
+    );
   }
 
   private String formatOrderFacts(OrderDTO order) {

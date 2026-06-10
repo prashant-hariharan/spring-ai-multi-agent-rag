@@ -42,6 +42,9 @@ public class RagDocumentCatalog {
   @Column(name = "source_system", nullable = false, length = 100)
   private String sourceSystem;
 
+  @Column(name = "latest_version", nullable = false)
+  private int latestVersion;
+
   @Column(name = "indexed_at", nullable = false)
   private Instant indexedAt;
 

@@ -54,14 +54,16 @@ public class RAGController {
       return ResponseEntity.badRequest().body(response);
     }
 
-    int chunks = documentService.loadAndIndexDocumentFromString(content, filename, documentType);
+    RAGIngesterService.IndexedDocumentResult indexedDocument =
+      documentService.loadAndIndexDocumentFromString(content, filename, documentType);
 
     Map<String, Object> response = new HashMap<>();
     response.put("success", true);
     response.put("message", "Document indexed successfully");
     response.put("filename", filename);
     response.put("type", documentType.name());
-    response.put("chunks", chunks);
+    response.put("version", indexedDocument.version());
+    response.put("chunks", indexedDocument.chunks());
 
     return ResponseEntity.ok(response);
   }

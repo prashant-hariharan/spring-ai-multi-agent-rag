@@ -46,11 +46,14 @@ app:
       enabled: false
     guardrails:
       enabled: true
+    evaluation:
+      enabled: true
+      max-attempts: 2
   rag:
     retrieval:
-      default-top-k: 3
-      combined-top-k: 5
-      similarity-threshold: 0.60
+      default-top-k: 6
+      combined-top-k: 8
+      similarity-threshold: 0.30
   cache:
     intent:
       ttl-minutes: 30

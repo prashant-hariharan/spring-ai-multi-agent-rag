@@ -19,7 +19,6 @@ import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -51,6 +50,12 @@ public class RAGQueryService {
   @Value("${app.rag.retrieval.similarity-threshold:0.35}")
   private double similarityThreshold;
 
+  public record RagAnswerResult(
+    String answer,
+    String evidence
+  ) {
+  }
+
   public String askQuestion(String question, String aiProvider, Collection<String> fileNames) {
     List<String> resolvedFileNames = resolveEffectiveFileNames(fileNames, null);
     String cacheKey = buildRagQueryCacheKey(question, aiProvider, resolvedFileNames);
@@ -77,8 +82,40 @@ public class RAGQueryService {
   }
 
   public String askQuestionWithAgentIntent(String question, String aiProvider, AgentIntent intent) {
-    List<String> resolvedFileNames = resolveEffectiveFileNames(Collections.emptyList(), intent);
-    return askQuestion(question, aiProvider, resolvedFileNames);
+    return askQuestionWithAgentIntentAndEvidence(question, aiProvider, intent, null).answer();
+  }
+
+  public RagAnswerResult askQuestionWithAgentIntentAndEvidence(
+    String question,
+    String aiProvider,
+    AgentIntent intent,
+    String retryInstruction
+  ) {
+    RagRetrievalScope retrievalScope = resolveRetrievalScopeForIntent(intent);
+    String cacheKey = buildRagQueryCacheKey(question, aiProvider, retrievalScope.cacheScope());
+    Cache cache = cacheManager.getCache(CacheConfig.RAG_QUERY_RESPONSE_CACHE);
+    boolean retry = StringUtils.hasText(retryInstruction);
+    String evidence = fetchRelevantContextInternal(question, retrievalScope, defaultTopK);
+
+    if (!retry && cache != null) {
+      String cached = cache.get(cacheKey, String.class);
+      if (cached != null) {
+        log.info("[{}] HIT key={} -> returning cached response (LLM not invoked)",
+          CacheConfig.RAG_QUERY_RESPONSE_CACHE, cacheKey);
+        return new RagAnswerResult(cached, evidence);
+      }
+      log.info("[{}] MISS key={} -> running retrieval + LLM",
+        CacheConfig.RAG_QUERY_RESPONSE_CACHE, cacheKey);
+    }
+
+    String response = generateRagAnswerFromContext(question, aiProvider, evidence, retryInstruction);
+    if (!retry && cache != null && shouldCache(response)) {
+      cache.put(cacheKey, response);
+      log.info("[{}] STORE key={}", CacheConfig.RAG_QUERY_RESPONSE_CACHE, cacheKey);
+    } else if (!retry && cache != null) {
+      log.info("[{}] SKIP-STORE key={} -> fallback/error response", CacheConfig.RAG_QUERY_RESPONSE_CACHE, cacheKey);
+    }
+    return new RagAnswerResult(response, evidence);
   }
 
   public String fetchRelevantContext(String question, Collection<String> fileNames) {
@@ -110,8 +147,31 @@ public class RAGQueryService {
   }
 
   public String fetchRelevantContextWithAgentIntent(String question, AgentIntent intent) {
-    List<String> resolvedFileNames = resolveEffectiveFileNames(Collections.emptyList(), intent);
-    return fetchRelevantContext(question, resolvedFileNames);
+    if (!StringUtils.hasText(question)) {
+      return "";
+    }
+    RagRetrievalScope retrievalScope = resolveRetrievalScopeForIntent(intent);
+    String cacheKey = buildRagContextCacheKey(question, retrievalScope.cacheScope());
+    Cache cache = cacheManager.getCache(CacheConfig.RAG_CONTEXT_CACHE);
+    if (cache != null) {
+      String cached = cache.get(cacheKey, String.class);
+      if (cached != null) {
+        log.info("[{}] HIT key={} -> returning cached context (retrieval not invoked)",
+          CacheConfig.RAG_CONTEXT_CACHE, cacheKey);
+        return cached;
+      }
+      log.info("[{}] MISS key={} -> running retrieval",
+        CacheConfig.RAG_CONTEXT_CACHE, cacheKey);
+    }
+
+    String context = fetchRelevantContextInternal(question, retrievalScope);
+    if (cache != null && StringUtils.hasText(context)) {
+      cache.put(cacheKey, context);
+      log.info("[{}] STORE key={}", CacheConfig.RAG_CONTEXT_CACHE, cacheKey);
+    } else if (cache != null) {
+      log.info("[{}] SKIP-STORE key={} -> empty context", CacheConfig.RAG_CONTEXT_CACHE, cacheKey);
+    }
+    return context;
   }
 
   public String buildRagQueryCacheKeyFromFileName(String question, String aiProvider, String fileName) {
@@ -133,6 +193,10 @@ public class RAGQueryService {
   }
 
   private String generateRagAnswer(String question, String aiProvider, Collection<String> fileNames) {
+    return generateRagAnswer(question, aiProvider, resolveRetrievalScope(fileNames));
+  }
+
+  private String generateRagAnswer(String question, String aiProvider, RagRetrievalScope retrievalScope) {
     log.info("RAG question: {}", question);
 
     if (!StringUtils.hasText(question)) {
@@ -140,34 +204,8 @@ public class RAGQueryService {
     }
 
     try {
-      List<Document> relevantDocs = retrieveRelevantDocs(question, fileNames, defaultTopK, similarityThreshold);
-
-      if (relevantDocs.isEmpty()) {
-        log.warn("No relevant documents found");
-        return "I don't have information about that in my knowledge base.";
-      }
-
-      log.info("Found {} relevant document(s)", relevantDocs.size());
-
-      String context = relevantDocs.stream()
-        .map(Document::getFormattedContent)
-        .collect(Collectors.joining("\n\n"));
-
-      String userPromptTemplate = PromptReaderUtil.getPrompt(resourceLoader, RAG_QUERY_USER_PROMPT_PATH);
-      String userPrompt = userPromptTemplate.formatted(question, context);
-
-      String answer = multiModelProviderService.executeWithTimeoutOrFallback(
-        "RAG query answer generation",
-        () -> multiModelProviderService.getChatClient(aiProvider)
-          .prompt()
-          .user(userPrompt)
-          .call()
-          .content(),
-        "Something went wrong while generating the response. Please try again."
-      );
-
-      log.info("Answer generated successfully");
-      return answer;
+      String context = fetchRelevantContextInternal(question, retrievalScope, defaultTopK);
+      return generateRagAnswerFromContext(question, aiProvider, context, null);
 
     } catch (NonTransientAiException e) {
       throw e;
@@ -177,9 +215,54 @@ public class RAGQueryService {
     }
   }
 
+  private String generateRagAnswerFromContext(
+    String question,
+    String aiProvider,
+    String context,
+    String retryInstruction
+  ) {
+    if (!StringUtils.hasText(question)) {
+      return "Please provide a question.";
+    }
+    if (!StringUtils.hasText(context)) {
+      log.warn("No relevant documents found");
+      return "I don't have information about that in my knowledge base.";
+    }
+
+    String userPromptTemplate = PromptReaderUtil.getPrompt(resourceLoader, RAG_QUERY_USER_PROMPT_PATH);
+    String initialUserPrompt = userPromptTemplate.formatted(question, context);
+    String userPrompt = initialUserPrompt;
+    if (StringUtils.hasText(retryInstruction)) {
+      userPrompt = userPrompt + "\n\nValidation feedback for retry:\n" + retryInstruction
+        + "\nRevise the answer so every factual claim is supported by the context.";
+    }
+    String finalUserPrompt = userPrompt;
+
+    String answer = multiModelProviderService.executeWithTimeoutOrFallback(
+      "RAG query answer generation",
+      () -> multiModelProviderService.getChatClient(aiProvider)
+        .prompt()
+        .user(finalUserPrompt)
+        .call()
+        .content(),
+      "Something went wrong while generating the response. Please try again."
+    );
+
+    log.info("Answer generated successfully");
+    return answer;
+  }
+
   private String fetchRelevantContextInternal(String question, Collection<String> fileNames) {
+    return fetchRelevantContextInternal(question, resolveRetrievalScope(fileNames));
+  }
+
+  private String fetchRelevantContextInternal(String question, RagRetrievalScope retrievalScope) {
+    return fetchRelevantContextInternal(question, retrievalScope, combinedTopK);
+  }
+
+  private String fetchRelevantContextInternal(String question, RagRetrievalScope retrievalScope, int topK) {
     try {
-      List<Document> relevantDocs = retrieveRelevantDocs(question, fileNames, combinedTopK, similarityThreshold);
+      List<Document> relevantDocs = retrieveRelevantDocs(question, retrievalScope, topK, similarityThreshold);
       if (relevantDocs.isEmpty()) {
         return "";
       }
@@ -200,11 +283,20 @@ public class RAGQueryService {
     int topK,
     double similarityThreshold
   ) {
+    return retrieveRelevantDocs(question, resolveRetrievalScope(fileNames), topK, similarityThreshold);
+  }
+
+  private List<Document> retrieveRelevantDocs(
+    String question,
+    RagRetrievalScope retrievalScope,
+    int topK,
+    double similarityThreshold
+  ) {
     SearchRequest.Builder searchRequestBuilder = SearchRequest.builder()
       .query(question)
       .topK(topK);
 
-    String filterExpression = buildFilterExpression(fileNames);
+    String filterExpression = buildFilterExpression(retrievalScope);
     if (StringUtils.hasText(filterExpression)) {
       log.info("Applying metadata filter for retrieval: {}", filterExpression);
       searchRequestBuilder.filterExpression(filterExpression);
@@ -229,26 +321,46 @@ public class RAGQueryService {
   }
 
   private String buildFilterExpression(Collection<String> fileNames) {
-    if (fileNames == null || fileNames.isEmpty()) {
-      return null;
-    }
+    return buildFilterExpression(resolveRetrievalScope(fileNames));
+  }
 
-    List<String> normalizedFileNames = new ArrayList<>();
-    for (String fileName : fileNames) {
-      if (StringUtils.hasText(fileName)) {
-        normalizedFileNames.add(fileName.trim());
+  private String buildFilterExpression(RagRetrievalScope retrievalScope) {
+    if (retrievalScope.catalogRecords().isEmpty()) {
+      if (!retrievalScope.fileNames().isEmpty()) {
+        return "fileName == '__NO_MATCH__'";
       }
-    }
-
-    if (normalizedFileNames.isEmpty()) {
       return null;
     }
 
-    StringJoiner fileFilters = new StringJoiner(" || ");
-    for (String fileName : normalizedFileNames) {
-      fileFilters.add("fileName == '" + escapeFilterValue(fileName) + "'");
+    StringJoiner latestVersionFilters = new StringJoiner(" || ");
+    for (RagDocumentCatalog catalogRecord : retrievalScope.catalogRecords()) {
+      latestVersionFilters.add(buildLatestVersionFilter(catalogRecord));
     }
-    return "(" + fileFilters + ")";
+    return "(" + latestVersionFilters + ")";
+  }
+
+  private RagRetrievalScope resolveRetrievalScope(Collection<String> fileNames) {
+    List<String> normalizedFileNames = normalizeFileNames(fileNames);
+    return new RagRetrievalScope(
+      normalizedFileNames,
+      findCatalogRecordsForScope(normalizedFileNames)
+    );
+  }
+
+  private List<RagDocumentCatalog> findCatalogRecordsForScope(List<String> normalizedFileNames) {
+    if (normalizedFileNames.isEmpty()) {
+      return ragDocumentCatalogRepository.findAll();
+    }
+    return ragDocumentCatalogRepository.findAllByFileNameIn(normalizedFileNames);
+  }
+
+  private String buildLatestVersionFilter(RagDocumentCatalog catalogRecord) {
+    String filter = "fileName == '" + escapeFilterValue(catalogRecord.getFileName()) + "'"
+      + " && documentType == '" + escapeFilterValue(catalogRecord.getDocumentType().name()) + "'";
+    if (catalogRecord.getLatestVersion() > 0) {
+      filter += " && documentVersion == " + catalogRecord.getLatestVersion();
+    }
+    return "(" + filter + ")";
   }
 
   private List<String> resolveEffectiveFileNames(Collection<String> explicitFileNames, AgentIntent intent) {
@@ -276,6 +388,27 @@ public class RAGQueryService {
     log.info("No file scope derived from catalog for intent={} and documentTypes={}. Falling back to unfiltered retrieval.",
       intent, documentTypes);
     return Collections.emptyList();
+  }
+
+  private RagRetrievalScope resolveRetrievalScopeForIntent(AgentIntent intent) {
+    List<RagDocumentType> documentTypes = mapIntentToDocumentTypes(intent);
+    List<RagDocumentCatalog> catalogRecords = documentTypes.isEmpty()
+      ? ragDocumentCatalogRepository.findAll()
+      : ragDocumentCatalogRepository.findAllByDocumentTypeIn(documentTypes);
+
+    List<String> catalogFileNames = normalizeFileNames(
+      catalogRecords.stream().map(RagDocumentCatalog::getFileName).toList()
+    );
+
+    if (!catalogFileNames.isEmpty()) {
+      log.info("Resolved RAG catalog scope for intent={} and documentTypes={}: {}",
+        intent, documentTypes, catalogFileNames);
+      return new RagRetrievalScope(catalogFileNames, catalogRecords);
+    }
+
+    log.info("No file scope derived from catalog for intent={} and documentTypes={}. Falling back to unfiltered retrieval.",
+      intent, documentTypes);
+    return new RagRetrievalScope(Collections.emptyList(), Collections.emptyList());
   }
 
   private List<RagDocumentType> mapIntentToDocumentTypes(AgentIntent intent) {
@@ -341,5 +474,20 @@ public class RAGQueryService {
     return !normalized.contains("something went wrong")
       && !normalized.contains("don't have information")
       && !normalized.contains("unable to answer");
+  }
+
+  private record RagRetrievalScope(
+    List<String> fileNames,
+    List<RagDocumentCatalog> catalogRecords
+  ) {
+    private Collection<String> cacheScope() {
+      if (catalogRecords.isEmpty()) {
+        return fileNames;
+      }
+      return catalogRecords.stream()
+        .map(record -> record.getDocumentType().name() + ":" + record.getFileName())
+        .sorted()
+        .toList();
+    }
   }
 }

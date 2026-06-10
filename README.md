@@ -193,11 +193,12 @@ Retrieval defaults in query flow:
 ## 5) Flow Diagrams
 
 ### 5.1 Agent Query Flow
-Intent: Handles a single user query by classifying route and intent, then dispatching to the correct route handler (`RAG`, `TOOLS`, `COMBINED`, or `GENERAL`).
+Intent: Handles a single user query by classifying route and intent, dispatching to the correct route handler (`RAG`, `TOOLS`, `COMBINED`, or `GENERAL`), then evaluating the generated answer before returning it.
 Controller: `AgentController` (`POST /agent/query`) is the unified entrypoint for orchestration.
 Source: `flows/AGENT_QUERY_FLOW.md`
+Eval step: after a route handler returns a successful `RouteExecutionResult`, `AgentOrchestratorService` calls `AnswerEvaluationService.evaluate`; failed evaluations retry with feedback until `app.ai.evaluation.max-attempts` is exhausted.
 
-![Agent Query Flow](flows/agent_query_flow.png)
+![Agent Query Flow](flows/agent_query_flow_evals.png)
 
 ### 5.2 RAG Flows
 Intent: Shows both document ingestion into vector store and runtime retrieval flow for policy/knowledge Q&A.
@@ -218,11 +219,12 @@ Source: `flows/TOOLS_FLOW.md`
 ![Tools Flow](flows/tools_flow.png)
 
 ### 5.4 Combined Route Flow
-Intent: Shows the end-to-end `COMBINED` route flow that merges deterministic order facts with intent-scoped policy context and synthesizes a final answer.
-Controller: `AgentController` (`POST /agent/query`) enters orchestration; `CombinedRouteHandler` executes order lookup + RAG context + synthesis.
+Intent: Shows the end-to-end `COMBINED` route flow that merges deterministic order facts with intent-scoped policy context, synthesizes a final answer, and validates it through answer evaluation.
+Controller: `AgentController` (`POST /agent/query`) enters orchestration; `CombinedRouteHandler` executes order lookup + RAG context + synthesis; `AgentOrchestratorService` evaluates and retries when needed.
 Source: `flows/COMBINED_ROUTE_FLOW.md`
+Eval step: `CombinedRouteHandler` returns the synthesized answer plus evidence, then `AgentOrchestratorService` evaluates it and either returns it, retries with evaluation feedback, or returns a validation failure.
 
-![Combined Route Flow](flows/combined_route_flow.png)
+![Combined Route Flow](flows/combined_route_flow_evals.png)
 
 ### 5.5 Model Routing Modes
 Intent: Shows how model requests are routed in default mode vs `litellm` profile mode.
