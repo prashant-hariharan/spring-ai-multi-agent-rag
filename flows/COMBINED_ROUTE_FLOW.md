@@ -28,6 +28,11 @@ flowchart TD
     K5 --> L
     L --> M[MultiModelProviderService.executeWithTimeoutOrFallback]
     M --> N[LLM generates combined answer]
-    N --> O[Return AgentQueryResponse success=true route=COMBINED]
+    N --> O[Return RouteExecutionResult<br/>response + evidence]
+    O --> P[AgentOrchestratorService evaluates final answer<br/>AnswerEvaluationService.evaluate]
+    P --> Q{Evaluation passed?}
+    Q -->|Yes| R[Return AgentQueryResponse success=true route=COMBINED]
+    Q -->|No and attempts remain| S[Retry CombinedRouteHandler<br/>with evaluation feedback]
+    S --> G
+    Q -->|No attempts left| T[Return validation failure<br/>with last answer]
 ```
-
